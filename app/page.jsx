@@ -33,16 +33,32 @@ const EMOJI_MAP = {
 const ei = n => EMOJI_MAP[n] || "📌";
 const CAT_COLORS = ["#FF6B6B","#4ECDC4","#45B7D1","#96CEB4","#F7DC6F","#DDA0DD","#98D8C8","#F0B27A","#BB8FCE","#85C1E9","#82E0AA","#F1948A"];
 
-const cloudGet = async (key) => {
+// 🔒 配合安全后端的全局云端存储器封装
+const cloudGet = async (key, globalPwd, userToken) => {
   try {
-    const r = await fetch(`/api/storage?key=${encodeURIComponent(key)}`);
+    const r = await fetch(`/api/storage?key=${encodeURIComponent(key)}`, {
+      method: "GET",
+      headers: {
+        "x-global-password": globalPwd,
+        "x-user-token": userToken
+      }
+    });
     const j = await r.json();
     return j.data ?? null;
   } catch { return null; }
 };
-const cloudSet = async (key, value) => {
+
+const cloudSet = async (key, value, globalPwd, userToken) => {
   try {
-    await fetch("/api/storage", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ key, value }) });
+    await fetch("/api/storage", { 
+      method:"POST", 
+      headers:{
+        "Content-Type":"application/json",
+        "x-global-password": globalPwd,
+        "x-user-token": userToken
+      }, 
+      body: JSON.stringify({ key, value }) 
+    });
   } catch {}
 };
 
@@ -87,6 +103,11 @@ export default function App() {
   const [loaded, setLoaded]   = useState(false);
   const toastRef = useRef(null);
 
+  // 🔑 安全机制本地缓存凭证
+  const [globalPwd, setGlobalPwd] = useState(() => typeof window !== "undefined" ? localStorage.getItem("mt_global_pwd") || "" : "");
+  const [userToken, setUserToken] = useState(() => typeof window !== "undefined" ? localStorage.getItem("mt_user_token") || "" : "");
+  const [isAuth, setIsAuth]       = useState(false);
+
   const [cats, setCats]                 = useState(DEFAULT_CATS);
   const [records, setRecords]           = useState([]);
   const [wallets, setWallets]           = useState(DEFAULT_WALLETS);
@@ -96,41 +117,83 @@ export default function App() {
   const [installments, setInstallments] = useState([]);
   const [settings, setSettings]         = useState({ alertStyle:"strict", defaultWallet:"cash" });
 
+  // 🔐 启动身份验证阻断器
   useEffect(() => {
-    (async () => {
-      setSyncing(true);
-      const [r,w,c,b,wm,aa,inst,s] = await Promise.all([
-        cloudGet("records"), cloudGet("wallets"), cloudGet("cats"),
-        cloudGet("budgets"), cloudGet("wordmap"), cloudGet("aa"),
-        cloudGet("installments"), cloudGet("settings"),
-      ]);
-      if (r)    setRecords(r);
-      if (w)    setWallets(w);
-      if (c)    setCats(c);
-      if (b)    setBudgets(b);
-      if (wm)   setWordMap(wm);
-      if (aa)   setAaList(aa);
-      if (inst) setInstallments(inst);
-      if (s)    setSettings(s);
-      setSyncing(false);
+    if (globalPwd && userToken) {
+      (async () => {
+        setSyncing(true);
+        // 使用提供的凭证尝试获取一次，以验证密码正确性
+        const r = await cloudGet("records", globalPwd, userToken);
+        if (r !== null) {
+          setRecords(r);
+          const [w,c,b,wm,aa,inst,s] = await Promise.all([
+            cloudGet("wallets", globalPwd, userToken), cloudGet("cats", globalPwd, userToken),
+            cloudGet("budgets", globalPwd, userToken), cloudGet("wordmap", globalPwd, userToken),
+            cloudGet("aa", globalPwd, userToken), cloudGet("installments", globalPwd, userToken),
+            cloudGet("settings", globalPwd, userToken),
+          ]);
+          if (w)    setWallets(w);
+          if (c)    setCats(c);
+          if (b)    setBudgets(b);
+          if (wm)   setWordMap(wm);
+          if (aa)   setAaList(aa);
+          if (inst) setInstallments(inst);
+          if (s)    setSettings(s);
+          setIsAuth(true);
+        } else {
+          showToast("🔑 凭证无效，请重新验证");
+          localStorage.removeItem("mt_global_pwd");
+        }
+        setSyncing(false);
+        setLoaded(true);
+      })();
+    } else {
       setLoaded(true);
-    })();
-  }, []);
+    }
+  }, [globalPwd, userToken]);
 
-  useEffect(() => { if (loaded) cloudSet("records", records); }, [records, loaded]);
-  useEffect(() => { if (loaded) cloudSet("wallets", wallets); }, [wallets, loaded]);
-  useEffect(() => { if (loaded) cloudSet("cats", cats); }, [cats, loaded]);
-  useEffect(() => { if (loaded) cloudSet("budgets", budgets); }, [budgets, loaded]);
-  useEffect(() => { if (loaded) cloudSet("wordmap", wordMap); }, [wordMap, loaded]);
-  useEffect(() => { if (loaded) cloudSet("aa", aaList); }, [aaList, loaded]);
-  useEffect(() => { if (loaded) cloudSet("installments", installments); }, [installments, loaded]);
-  useEffect(() => { if (loaded) cloudSet("settings", settings); }, [settings, loaded]);
+  // 💾 数据变更时静默安全云同步
+  useEffect(() => { if (isAuth && loaded) cloudSet("records", records, globalPwd, userToken); }, [records, loaded, isAuth]);
+  useEffect(() => { if (isAuth && loaded) cloudSet("wallets", wallets, globalPwd, userToken); }, [wallets, loaded, isAuth]);
+  useEffect(() => { if (isAuth && loaded) cloudSet("cats", cats, globalPwd, userToken); }, [cats, loaded, isAuth]);
+  useEffect(() => { if (isAuth && loaded) cloudSet("budgets", budgets, globalPwd, userToken); }, [budgets, loaded, isAuth]);
+  useEffect(() => { if (isAuth && loaded) cloudSet("wordmap", wordMap, globalPwd, userToken); }, [wordMap, loaded, isAuth]);
+  useEffect(() => { if (isAuth && loaded) cloudSet("aa", aaList, globalPwd, userToken); }, [aaList, loaded, isAuth]);
+  useEffect(() => { if (isAuth && loaded) cloudSet("installments", installments, globalPwd, userToken); }, [installments, loaded, isAuth]);
+  useEffect(() => { if (isAuth && loaded) cloudSet("settings", settings, globalPwd, userToken); }, [settings, loaded, isAuth]);
 
   const showToast = msg => { setToast(msg); if (toastRef.current) clearTimeout(toastRef.current); toastRef.current = setTimeout(() => setToast(""), 3000); };
   const addRecord = r  => setRecords(p => [r, ...p]);
   const delRecord = id => setRecords(p => p.filter(r => r.id !== id));
   const updRecord = r  => { setRecords(p => p.map(x => x.id===r.id ? r : x)); if (r.desc&&r.category) setWordMap(m=>({...m,[r.desc.toLowerCase()]:r.category})); };
   const updWallet = (wid, delta) => setWallets(p => p.map(w => w.id===wid ? {...w, balance:(w.balance||0)+delta} : w));
+
+  // 🔓 弹出登录框拦截
+  if (!isAuth) {
+    return (
+      <div style={{ height:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:T.bg, color:T.text, fontFamily:font, padding:20 }}>
+        <div style={{ background:T.card, padding:24, borderRadius:20, width:"100%", maxWidth:320, boxSizing:"border-box", textAlign:"center", boxShadow:"0 8px 30px rgba(0,0,0,0.08)" }}>
+          <div style={{ fontSize:36, marginBottom:10 }}>🔒</div>
+          <div style={{ fontSize:18, fontWeight:700, marginBottom:4 }}>MoneyTalk 安全防线</div>
+          <div style={{ fontSize:12, color:T.sub, marginBottom:20 }}>请输入全站访问密码及你的专属暗号</div>
+          
+          <input type="password" id="g_pwd" placeholder="全站密码 (APP_PASSWORD)" style={{ width:"100%", padding:"10px 12px", marginBottom:10, borderRadius:10, border:`1px solid ${T.border}`, background:T.surface, color:T.text, boxSizing:"border-box" }}/>
+          <input type="text" id="u_tok" placeholder="你的专属暗号 (如: jack888)" style={{ width:"100%", padding:"10px 12px", marginBottom:20, borderRadius:10, border:`1px solid ${T.border}`, background:T.surface, color:T.text, boxSizing:"border-box" }}/>
+          
+          <button onClick={() => {
+            const gp = document.getElementById("g_pwd").value;
+            const ut = document.getElementById("u_tok").value.trim();
+            if(!gp || !ut) return showToast("请填写完整信息");
+            localStorage.setItem("mt_global_pwd", gp);
+            localStorage.setItem("mt_user_token", ut);
+            setGlobalPwd(gp);
+            setUserToken(ut);
+          }} style={{ width:"100%", padding:12, borderRadius:10, background:T.accent, color:T.accentText, border:"none", fontWeight:700, cursor:"pointer" }}>解锁进入</button>
+        </div>
+        <Toast msg={toast} T={T} />
+      </div>
+    );
+  }
 
   if (!loaded) return (
     <div style={{ height:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:T.bg, color:T.text, fontFamily:font, gap:16 }}>
@@ -152,7 +215,7 @@ export default function App() {
     <div style={{ fontFamily:font, background:T.bg, color:T.text, height:"100vh", maxWidth:430, margin:"0 auto", display:"flex", flexDirection:"column", overflow:"hidden" }}>
       {syncing && <div style={{ height:2, background:T.accent }} />}
       <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-        {tab==="chat"     && <ChatTab     T={T} cats={cats} records={records} wallets={wallets} budgets={budgets} wordMap={wordMap} setWordMap={setWordMap} aaList={aaList} setAaList={setAaList} installments={installments} setInstallments={setInstallments} settings={settings} addRecord={addRecord} delRecord={delRecord} updWallet={updWallet} showToast={showToast} />}
+        {tab==="chat"     && <ChatTab     T={T} cats={cats} records={records} wallets={wallets} budgets={budgets} wordMap={wordMap} setWordMap={setWordMap} aaList={aaList} setAaList={setAaList} installments={installments} setInstallments={setInstallments} settings={settings} addRecord={addRecord} delRecord={delRecord} updWallet={updWallet} showToast={showToast} globalPwd={globalPwd} userToken={userToken} />}
         {tab==="records"  && <RecordsTab  T={T} records={records} delRecord={delRecord} updRecord={updRecord} cats={cats} wallets={wallets} showToast={showToast} />}
         {tab==="stats"    && <StatsTab    T={T} records={records} budgets={budgets} aaList={aaList} setAaList={setAaList} installments={installments} cats={cats} />}
         {tab==="wallets"  && <WalletsTab  T={T} wallets={wallets} setWallets={setWallets} records={records} showToast={showToast} />}
@@ -167,12 +230,12 @@ export default function App() {
         ))}
       </nav>
       <Toast msg={toast} T={T} />
-      <style>{`@keyframes syncbar{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}`}</style>
     </div>
   );
 }
-function ChatTab({ T, cats, records, wallets, budgets, wordMap, setWordMap, aaList, setAaList, installments, setInstallments, settings, addRecord, delRecord, updWallet, showToast }) {
-  const [msgs, setMsgs] = useState([{ id:0, role:"bot", text:`你好！把任何消费信息丢给我 💬\n\n• 海底捞 RM45 信用卡\n• 打车 12，奶茶 8 TnG\n• 聚餐 300 AA 小明 小红 信用卡\n• iPhone 4800 分12期 ShopeePay\n• 发工资 6500 Maybank\n• Maybank 转 200 到 TnG\n• 小明还了AA 100\n\n或直接问：「这个月吃饭花多少？」` }]);
+
+function ChatTab({ T, cats, records, wallets, budgets, wordMap, setWordMap, aaList, setAaList, installments, setInstallments, settings, addRecord, delRecord, updWallet, showToast, globalPwd, userToken }) {
+  const [msgs, setMsgs] = useState([{ id:0, role:"bot", text:`你好！把任何消费信息丢给我 💬\n\n• 海底捞 RM45 信用卡\n• 打车 12，奶茶 8 TnG\n• 聚餐 300 AA 小明 小红 信用卡\n• iPhone 4800 分12期 Maybank\n• 发工资 6500 Maybank\n• Maybank 转 200 到 TnG\n• 小明还了AA 100` }]);
   const [input, setInput]       = useState("");
   const [pending, setPending]   = useState(null);
   const [loading, setLoading]   = useState(false);
@@ -255,10 +318,12 @@ function ChatTab({ T, cats, records, wallets, budgets, wordMap, setWordMap, aaLi
     enableUndo(r.id,p.desc);
   };
 
+  // 🤖 呼叫全新的本地后端 Gemini 引擎（流式读取）
   const handleSend = async () => {
     const text=input.trim();
     if(!text||loading)return;
     setInput("");
+    
     if(pending){
       push("user",text);
       const chosen=cats.expense.includes(text)?text:(text==="是"||text==="对")?pending.suggestedCat:null;
@@ -269,49 +334,90 @@ function ChatTab({ T, cats, records, wallets, budgets, wordMap, setWordMap, aaLi
       else setPending(null);
       return;
     }
+    
     push("user",text);
-    const queryKW=["花了多少","花多少","几次","多少钱","查","帮我看","这个月","今年","今天","上个月"];
-    if((queryKW.some(k=>text.includes(k))&&!text.match(/^\d/))||text.endsWith("？")||text.endsWith("?")){await handleQuery(text);return;}
     setLoading(true);
+
     try {
-      const walletNames=wallets.map(w=>`${w.id}:${w.name}`).join(", ");
-      const system=`你是个人财务解析引擎（马来西亚，货币RM）。将输入解析为JSON数组。支持：普通支出、多笔（逗号分隔）、AA分摊、分期付款、收入、转账、AA收款。字段：type(expense/income/transfer)、desc、amount、category(从[${cats.expense.join(",")}|${cats.income.join(",")}]选)、walletId(从[${walletNames}]匹配,默认cash)、fromWallet、toWallet、isAA、people(AA欠款人数组)、isInstallment、totalMonths、monthlyAmount、isTransfer、isAASettle、personName、tags(2-3个语义标签)、confidence(high/low)。只返回JSON数组。`;
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,system,messages:[{role:"user",content:text}]})});
-      const data=await resp.json();
-      let raw=(data.content?.[0]?.text||"[]").replace(/```json|```/g,"").trim();
-      const parsed=JSON.parse(raw);
+      // 1. 请求自己安全防线包裹的后端路由 `/api/chat`
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-global-password": globalPwd
+        },
+        body: JSON.stringify({ message: text })
+      });
+
+      if (!resp.ok) throw new Error("API Error");
+
+      // 2. 流式数据读取器处理
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let rawText = "";
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        const chunk = decoder.decode(value, { stream: !done });
+        rawText += chunk;
+      }
+
+      // 3. 清理 AI 可能吐出来的 Markdown 包裹代码
+      let cleanJson = rawText.replace(/```json|```/g, "").trim();
+      // 提取最外层的完整 JSON 数组结构
+      const startIdx = cleanJson.indexOf("[");
+      const endIdx = cleanJson.lastIndexOf("]");
+      if (startIdx !== -1 && endIdx !== -1) {
+        cleanJson = cleanJson.slice(startIdx, endIdx + 1);
+      }
+
+      const parsed = JSON.parse(cleanJson);
       setLoading(false);
-      if(!Array.isArray(parsed)||parsed.length===0){push("bot","😅 没识别到财务信息，换个方式试试？");return;}
-      for(const p of parsed){if(p.type==="expense"&&p.amount){const a=anomalyCheck(p.desc,p.amount);if(a){push("bot",a);return;}}}
+
+      if(!Array.isArray(parsed) || parsed.length === 0){
+        push("bot", "😅 没识别到财务信息，换个方式试试？");
+        return;
+      }
+
+      for(const p of parsed){
+        if(p.type==="expense" && p.amount){
+          const a = anomalyCheck(p.desc, p.amount);
+          if(a) { push("bot", a); return; }
+        }
+      }
+
       const toConfirm=[];
       for(const p of parsed){
-        const fromMap=p.desc&&wordMap[p.desc.toLowerCase()];
-        if(fromMap&&cats.expense.includes(fromMap))p.category=fromMap;
-        if(p.isTransfer||p.type==="transfer")finishRecord({...p,isTransfer:true},"");
-        else if(p.isAASettle)finishRecord(p,"");
-        else if(p.confidence==="high"&&p.category)finishRecord(p,p.category);
-        else toConfirm.push({parsed:p,suggestedCat:p.category});
+        const fromMap = p.desc && wordMap[p.desc.toLowerCase()];
+        if(fromMap && cats.expense.includes(fromMap)) p.category = fromMap;
+        
+        if(p.isTransfer || p.type==="transfer") finishRecord({...p, isTransfer:true}, "");
+        else if(p.isAASettle) finishRecord(p, "");
+        else if(p.confidence==="high" && p.category) finishRecord(p, p.category);
+        else toConfirm.push({parsed:p, suggestedCat:p.category});
       }
-      if(toConfirm.length>0){const first=toConfirm[0];setPending({parsed:first.parsed,suggestedCat:first.suggestedCat,queue:toConfirm});push("bot",`🤔「${first.parsed.desc} ${fmt(first.parsed.amount)}」\n归入【${first.suggestedCat||"？"}】？${first.suggestedCat?"\n回复「是」或选其他：":"\n请选分类："}\n${cats.expense.join("、")}`);}
-    } catch{setLoading(false);push("bot","解析出错，请重试 🙏");}
-  };
 
-  const handleQuery = async (text) => {
-    setLoading(true);
-    try {
-      const summary=records.slice(0,300).map(r=>`${r.date} ${r.type} ${r.category} ${r.desc} ${r.amount} ${(r.tags||[]).join(" ")}`).join("\n");
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:300,system:`私人财务助理，货币RM，简洁中文回答（≤4句）。`,messages:[{role:"user",content:`记录：\n${summary}\n\n问：${text}`}]})});
-      const data=await resp.json();
+      if(toConfirm.length > 0){
+        const first = toConfirm[0];
+        setPending({parsed:first.parsed, suggestedCat:first.suggestedCat, queue:toConfirm});
+        push("bot", `🤔「${first.parsed.desc} ${fmt(first.parsed.amount)}」\n归入【${first.suggestedCat||"？"}】？${first.suggestedCat?"\n回复「是」或选其他：":"\n请选分类："}\n${cats.expense.join("、")}`);
+      }
+    } catch (err) {
       setLoading(false);
-      push("bot","📊 "+((data.content?.[0]?.text)||"暂无法回答").trim());
-    } catch{setLoading(false);push("bot","查询出错 🙏");}
+      push("bot", "解析出错或密码错误，请重新检查 🙏");
+    }
   };
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
-      <div style={{ padding:"14px 16px 10px", background:T.card, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
-        <div style={{ fontSize:18, fontWeight:700 }}>MoneyTalk 💬</div>
-        <div style={{ fontSize:11, color:T.sub }}>粘贴任何消费信息 · 自动解析</div>
+      <div style={{ padding:"14px 16px 10px", background:T.card, borderBottom:`1px solid ${T.border}`, flexShrink:0, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div>
+          <div style={{ fontSize:18, fontWeight:700 }}>MoneyTalk 💬</div>
+          <div style={{ fontSize:11, color:T.sub }}>专属沙盒: <span style={{color:T.blue}}>{userToken}</span> · Gemini 芯片</div>
+        </div>
+        <button onClick={() => { localStorage.clear(); window.location.reload(); }} style={{ background:"none", border:`1px solid ${T.border}`, color:T.sub, padding:"4px 8px", borderRadius:8, fontSize:11, cursor:"pointer" }}>登出</button>
       </div>
       <div style={{ flex:1, overflowY:"auto", padding:"12px 12px 6px", display:"flex", flexDirection:"column", gap:10 }}>
         {msgs.map(m=>(
@@ -340,23 +446,23 @@ function ChatTab({ T, cats, records, wallets, budgets, wordMap, setWordMap, aaLi
         </div>
       )}
       <div style={{ padding:"10px 11px", background:T.card, borderTop:`1px solid ${T.border}`, display:"flex", gap:8, alignItems:"flex-end", flexShrink:0 }}>
-        <textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleSend();}}} placeholder="输入消费、粘贴短信、或直接问问题…" rows={1} style={{ flex:1, border:`1px solid ${T.border}`, borderRadius:22, padding:"11px 15px", background:T.surface, color:T.text, fontSize:14, resize:"none", outline:"none", fontFamily:font, lineHeight:1.5, maxHeight:110 }}/>
+        <textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleSend();}}} placeholder="输入消费、转账或分期（如：打车 15 tng）" rows={1} style={{ flex:1, border:`1px solid ${T.border}`, borderRadius:22, padding:"11px 15px", background:T.surface, color:T.text, fontSize:14, resize:"none", outline:"none", fontFamily:font, lineHeight:1.5, maxHeight:110 }}/>
         <button onClick={handleSend} style={{ width:42, height:42, borderRadius:"50%", border:"none", background:T.accent, color:T.accentText, fontSize:20, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontWeight:700 }}>↑</button>
       </div>
     </div>
   );
 }
+
+// 保持 RecordsTab, StatsTab, WalletsTab, SettingsTab 等其他UI组件不变（直接沿用你原本精美的UI逻辑）
 function RecordsTab({ T, records, delRecord, updRecord, cats, wallets, showToast }) {
   const [search, setSearch]         = useState("");
   const [editTarget, setEditTarget] = useState(null);
   const [openId, setOpenId]         = useState(null);
-
   const filtered = search.trim() ? records.filter(r=>[r.desc,r.category,...(r.tags||[])].join(" ").toLowerCase().includes(search.toLowerCase())) : records;
   const grouped = {};
   filtered.forEach(r=>{ if(!grouped[r.date])grouped[r.date]=[]; grouped[r.date].push(r); });
   const dates = Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
   const searchTotal = search ? filtered.filter(r=>r.type==="expense").reduce((s,r)=>s+r.amount,0) : 0;
-
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
       <div style={{ padding:"14px 14px 10px", background:T.card, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
@@ -390,7 +496,6 @@ function RecordsTab({ T, records, delRecord, updRecord, cats, wallets, showToast
     </div>
   );
 }
-
 function RecordRow({ T, r, wallets, isOpen, onOpen, onClose, onEdit, onDelete }) {
   const startX = useRef(null);
   const wallet = wallets.find(w=>w.id===r.walletId);
@@ -418,7 +523,6 @@ function RecordRow({ T, r, wallets, isOpen, onOpen, onClose, onEdit, onDelete })
     </div>
   );
 }
-
 function EditModal({ T, record, cats, wallets, onSave, onClose }) {
   const [r, setR] = useState({...record});
   const allCats = [...cats.expense,...cats.income,...cats.savings];
@@ -453,7 +557,6 @@ function EditModal({ T, record, cats, wallets, onSave, onClose }) {
     </div>
   );
 }
-
 function StatsTab({ T, records, budgets, aaList, setAaList, installments, cats }) {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
@@ -461,7 +564,6 @@ function StatsTab({ T, records, budgets, aaList, setAaList, installments, cats }
   const [view, setView]   = useState("expense");
   const [drill, setDrill] = useState(null);
   const navM = d => { let m=month+d,y=year; if(m>12){m=1;y++;} if(m<1){m=12;y--;} setMonth(m);setYear(y); };
-
   const mRecs=records.filter(r=>{const d=new Date(r.date+"T00:00:00");return d.getFullYear()===year&&d.getMonth()+1===month;});
   const viewRecs=mRecs.filter(r=>r.type===view);
   const total=viewRecs.reduce((s,r)=>s+r.amount,0);
@@ -473,7 +575,6 @@ function StatsTab({ T, records, budgets, aaList, setAaList, installments, cats }
   const activeInst=installments.filter(i=>!i.completed);
   const tagMap={}; mRecs.filter(r=>r.type==="expense").forEach(r=>(r.tags||[]).forEach(tg=>{if(!tg.startsWith("#分期")&&tg!=="#AA")tagMap[tg]=(tagMap[tg]||0)+r.amount;}));
   const topTags=Object.entries(tagMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
       <div style={{ padding:"14px 14px 10px", background:T.card, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
@@ -579,14 +680,12 @@ function WalletsTab({ T, wallets, setWallets, records, showToast }) {
   const [editBal, setEditBal] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm]       = useState({ name:"", icon:"🏦", color:"#4ECDC4" });
-
   const totalAssets=wallets.filter(w=>w.id!=="credit").reduce((s,w)=>s+(w.balance||0),0);
   const creditDebt=wallets.find(w=>w.id==="credit")?.balance||0;
   const now=new Date();
   const monthRecs=records.filter(r=>{const d=new Date(r.date+"T00:00:00");return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});
   const ICONS=["🏦","💳","💵","🟡","🔵","🟢","🔴","🟤","🧡","💜","⚫","🟩"];
   const COLORS=["#FFCC00","#C8102E","#1E90FF","#00B14F","#EE4D2D","#8B5CF6","#F59E0B","#8B4513","#FFD700","#006400","#00008B","#4ECDC4"];
-
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
       <div style={{ padding:"14px 14px 10px", background:T.card, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
@@ -656,14 +755,12 @@ function WalletsTab({ T, wallets, setWallets, records, showToast }) {
     </div>
   );
 }
-
 function SettingsTab({ T, cats, setCats, budgets, setBudgets, wallets, settings, setSettings, installments, setInstallments, addRecord, updWallet, showToast }) {
   const [open, setOpen]               = useState(null);
   const [newCat, setNewCat]           = useState({});
   const [budgetDraft, setBudgetDraft] = useState({...budgets});
   const sections=[{key:"expense",icon:"💸",label:"支出分类"},{key:"income",icon:"💰",label:"收入分类"},{key:"savings",icon:"🏦",label:"储蓄分类"}];
   const addCat=k=>{const v=(newCat[k]||"").trim();if(!v)return;if((cats[k]||[]).includes(v)){showToast("已存在");return;}setCats(p=>({...p,[k]:[...(p[k]||[]),v]}));setNewCat(p=>({...p,[k]:""}));};
-
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
       <div style={{ padding:"14px 14px 10px", background:T.card, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
@@ -751,4 +848,3 @@ function SettingsTab({ T, cats, setCats, budgets, setBudgets, wallets, settings,
     </div>
   );
 }
-
