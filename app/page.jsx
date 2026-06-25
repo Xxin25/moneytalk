@@ -12,15 +12,9 @@ const fmtDate = ds => {
 const font = "'Kaiti SC','楷体','STKaiti',serif";
 
 const DEFAULT_WALLETS = [
-  { id:"maybank",    name:"Maybank",     icon:"🏦", color:"#FFCC00", balance:0, custom:false },
-  { id:"cimb",       name:"CIMB",        icon:"🔴", color:"#C8102E", balance:0, custom:false },
-  { id:"publicbank", name:"Public Bank", icon:"🟤", color:"#8B4513", balance:0, custom:false },
-  { id:"rhb",        name:"RHB",         icon:"🟡", color:"#FFD700", balance:0, custom:false },
-  { id:"hongleong",  name:"Hong Leong",  icon:"🟢", color:"#006400", balance:0, custom:false },
-  { id:"ambank",     name:"AmBank",      icon:"🔵", color:"#00008B", balance:0, custom:false },
-  { id:"tng",        name:"Touch n Go",  icon:"💙", color:"#1E90FF", balance:0, custom:false },
-  { id:"grabpay",    name:"GrabPay",     icon:"💚", color:"#00B14F", balance:0, custom:false },
-  { id:"shopeepay",  name:"ShopeePay",   icon:"🧡", color:"#EE4D2D", balance:0, custom:false },
+  { id:"maybank",    name:"Maybank",     icon:"🟡", color:"#FFCC00", balance:0, custom:false },
+  { id:"rhb",        name:"UOB",         icon:"🔵", color:"#0066CC", balance:0, custom:false },
+  { id:"tng",        name:"Touch n Go",  icon:"🔷", color:"#1E90FF", balance:0, custom:false },
   { id:"credit",     name:"信用卡",       icon:"💳", color:"#8B5CF6", balance:0, custom:false },
   { id:"cash",       name:"现金",         icon:"💵", color:"#F59E0B", balance:0, custom:false },
 ];
