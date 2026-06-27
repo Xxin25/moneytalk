@@ -1,47 +1,21 @@
-import { google } from '@ai-sdk/google'
-import { streamText } from 'ai'
-import { NextResponse } from 'next/server'
-
 export async function POST(request) {
   try {
-    const headersList = request.headers
-    const globalPassword = headersList.get('x-global-password')
-
-    // 安全防御：校验全局密码
-    if (!globalPassword || globalPassword !== process.env.APP_PASSWORD) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid Global Password' }, { status: 401 })
-    }
-
-    const { message } = await request.json()
-
-    // 呼叫 Google Gemini 模型进行智能记账话术解析（极速、完全免费）
-    const result = streamText({
-      model: google('gemini-1.5-flash'),
-      messages: [
-        {
-          role: 'system',
-          content: `你是一个专业的智能记账解析助手。你的任务是将用户输入的口语化记账文本，精准解析为标准的 JSON 格式，不要返回任何多余的解释、标点或 Markdown 代码块包裹。
-          
-          必须返回且仅返回如下格式的 JSON 对象：
-          {
-            "amount": 数字(消费金额),
-            "category": "分类(如: 餐饮, 交通, 娱乐, 收入等)",
-            "account": "账户(如: 现金, 信用卡, TnG, Maybank等)",
-            "remarks": "备注(具体吃了什么或干了什么)",
-            "isAA": 布尔值(是否是AA分摊),
-            "installment": 数字(分期期数，若无则为0)
-          }`
-        },
-        {
-          role: 'user',
-          content: message
-        }
-      ]
-    })
-
-    return result.toDataStreamResponse()
-  } catch (error) {
-    console.error('Gemini Parse Error:', error)
-    return NextResponse.json({ error: 'AI Parse Failed', details: error.message }, { status: 500 })
+    const { prompt } = await request.json();
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GOOGLE_GENERATIVE_AI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1200 }
+        })
+      }
+    );
+    const data = await resp.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return Response.json({ text });
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 });
   }
 }
