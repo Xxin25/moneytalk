@@ -12,11 +12,11 @@ const fmtDate = ds => {
 const font = "'Kaiti SC','楷体','STKaiti',serif";
 
 const DEFAULT_WALLETS = [
-  { id:"maybank",  name:"Maybank",    icon:"🟡", color:"#FFCC00", balance:0, custom:false },
-  { id:"rhb",      name:"RHB",        icon:"🔵", color:"#0066CC", balance:0, custom:false },
-  { id:"tng",      name:"Touch n Go", icon:"🔷", color:"#1E90FF", balance:0, custom:false },
-  { id:"credit",   name:"信用卡",      icon:"💳", color:"#8B5CF6", balance:0, custom:false },
-  { id:"cash",     name:"现金",        icon:"💵", color:"#F59E0B", balance:0, custom:false },
+  { id:"maybank", name:"Maybank",    icon:"🏦", color:"#FFCC00", balance:0, custom:false },
+  { id:"rhb",     name:"RHB",        icon:"🟡", color:"#FFD700", balance:0, custom:false },
+  { id:"tng",     name:"Touch n Go", icon:"🔷", color:"#1E90FF", balance:0, custom:false },
+  { id:"credit",  name:"信用卡",      icon:"💳", color:"#8B5CF6", balance:0, custom:false },
+  { id:"cash",    name:"现金",        icon:"💵", color:"#F59E0B", balance:0, custom:false },
 ];
 
 const DEFAULT_CATS = {
